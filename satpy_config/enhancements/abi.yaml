@@ -1,0 +1,10 @@
+enhancements:
+  night_ir_gray:
+    standard_name: night_ir_gray
+    operations:
+      - name: inverted_stretch
+        method: !!python/name:satpy.enhancements.contrast.stretch
+        kwargs: {stretch: crude, min_stretch: [300, 300, 300], max_stretch: [200, 200, 200]}
+      - name: gamma
+        method: !!python/name:satpy.enhancements.contrast.gamma
+        kwargs: {gamma: 1.4}

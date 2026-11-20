@@ -1,0 +1,24 @@
+# Local satpy composites (loaded via SATPY_CONFIG_PATH, see satpy_frame.py).
+sensor_name: visir/abi
+
+composites:
+  # Night side: C13 (10.3 um) brightness temperature as grey RGB
+  # (inverted in enhancements/abi.yaml: cold cloud tops bright, warm surface dark).
+  night_ir_gray:
+    compositor: !!python/name:satpy.composites.core.GenericCompositor
+    standard_name: night_ir_gray
+    prerequisites:
+      - 10.3
+      - 10.3
+      - 10.3
+
+  # Like satpy's true_color_with_night_ir, but without the Black Marble
+  # city-lights background (its download currently fails satpy's hash check).
+  true_color_with_night_ir_nobg:
+    compositor: !!python/name:satpy.composites.fill.DayNightCompositor
+    standard_name: true_color_with_night_ir
+    lim_low: 80
+    lim_high: 90
+    prerequisites:
+      - true_color
+      - night_ir_gray
