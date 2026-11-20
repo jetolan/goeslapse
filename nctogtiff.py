@@ -25,6 +25,8 @@
 #    easily reprojects to north-up). Ideally (TODO), we would
 #    write a north-up TIFF with a flipped transform.
 
+import os
+
 import rasterio as rio
 from rasterio.windows import Window
 from sys import argv
@@ -83,11 +85,20 @@ def main(srcf, dstf):
             "count": 1,
             "dtype": np.uint16,
             "compress": "deflate",
+            # netCDF chunk sizes (e.g. 226) are not valid GeoTIFF tile sizes
+            "tiled": True,
+            "blockxsize": 512,
+            "blockysize": 512,
             # "transform": newaff
         }
     )
 
-    with rio.open(dstf, "w", **meta) as dst:
+    # write to a temp file and rename, so an interrupted run never leaves a
+    # half-written TIFF behind (GDAL cannot overwrite a corrupt one)
+    tmpf = dstf + ".part.tif"
+    if os.path.exists(tmpf):
+        os.remove(tmpf)
+    with rio.open(tmpf, "w", **meta) as dst:
 
         slices = (
             ((v * bs, (v + 1) * bs), (h * bs, (h + 1) * bs))
@@ -102,4 +113,6 @@ def main(srcf, dstf):
             w = Window.from_slices(sl[0], sl[1])
             dst.write(rad, 1, window=w)
 
+    nc.close()
+    os.replace(tmpf, dstf)
     return dstf

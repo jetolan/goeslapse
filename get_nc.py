@@ -1,104 +1,117 @@
-import boto3
+"""Find and download GOES ABI L1b NetCDF files from NOAA's public S3 buckets.
+
+Buckets: s3://noaa-goes16 .. noaa-goes19 (public, us-east-1, anonymous access).
+GOES-17 was retired in 2023; GOES-18 is GOES-West and GOES-19 is GOES-East.
+"""
 import os
-import pandas as pd
-from datetime import datetime
+from functools import lru_cache
+
+import boto3
 import numpy as np
+import pandas as pd
+from botocore import UNSIGNED
+from botocore.config import Config
+
+SAT_SHORT = {'goes16': 'G16', 'goes17': 'G17', 'goes18': 'G18', 'goes19': 'G19'}
+
+
+@lru_cache(maxsize=None)
+def s3_client():
+    """Anonymous client: the NOAA buckets are public, no AWS credentials needed."""
+    return boto3.client('s3', region_name='us-east-1',
+                        config=Config(signature_version=UNSIGNED,
+                                      max_pool_connections=32))
 
 
 def convert_date(date_str):
     pddate = pd.to_datetime(date_str)
     doy = pddate.timetuple().tm_yday
-    year = pddate.year
-    hour = pddate.hour
-    minute = pddate.minute
-    return year, doy, hour, minute
+    return pddate.year, doy, pddate.hour, pddate.minute
 
 
-def prefix(frame, band, sat, year, doy, hour, minute=None):
-    """
-    frame: "F" full disk
-    sat: "G17" or "G16"
-    band: 1 blue
-          2 red
-          3 nir
-    """
-    doy_str = str(doy).zfill(3)
-    hour_str = str(hour).zfill(2)
-    minute_str = str(minute).zfill(2)
+def hour_prefix(frame, year, doy, hour):
+    """S3 key prefix for one hour of a product, e.g. ABI-L1b-RadF/2025/079/21/"""
+    return f"ABI-L1b-Rad{frame}/{year}/{doy:03d}/{hour:02d}/"
 
-    base = f"ABI-L1b-Rad{frame}/{year}/{doy_str}/{hour_str}/"
 
-    # there appears to be some naming convention changes
-    if year >= 2019:
-        mm = "M6"
-    else:
-        mm = "M3"
-
-    if minute:
-        filename = f"OR_ABI-L1b-Rad{frame}-{mm}C0{band}_{sat}_s{year}{doy_str}{hour_str}{minute_str}"
-    else:
-        filename = f"OR_ABI-L1b-Rad{frame}-{mm}C0{band}_{sat}_s{year}{doy_str}{hour_str}"
-
-    prefix = f"{base}{filename}"
-    return prefix
+def band_tag(band):
+    """Filename tag for a channel, e.g. 'C02_' (trailing _ so C01 != C010)."""
+    return f"C{int(band):02d}_"
 
 
 def aws_ls(bucket, prefix):
-    s3_client = boto3.client('s3')
-    contents = s3_client.list_objects(Bucket=bucket, Prefix=prefix)['Contents']
-    files = [c['Key'] for c in contents]
-    return files
+    """List all keys under prefix (paginated; returns [] if none)."""
+    paginator = s3_client().get_paginator('list_objects_v2')
+    keys = []
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        keys.extend(c['Key'] for c in page.get('Contents', []))
+    return keys
 
 
 def parse_nc_fname(fname):
+    """Scan start time from an ABI filename (..._sYYYYJJJHHMMSSs_...)."""
     ind = fname.find('_s')
-    date = fname[ind+2:ind+15]
-    dd = pd.to_datetime(date, format='%Y%j%H%M%S')
-    return dd
+    date = fname[ind + 2:ind + 15]
+    return pd.to_datetime(date, format='%Y%j%H%M%S')
 
 
-def aws_get(bucket, target_file, local_dir='/tmp', replace=False, outfile=None):
-    s3_client = boto3.client('s3')
+def find_key(sat, band, frame, date, max_offset_s=300):
+    """S3 key of the scan of `band` whose start is closest to `date`.
+
+    Searches the hour of `date` and the neighbouring hours so that dates near
+    an hour boundary still find the right scan. Returns None if nothing is
+    within max_offset_s seconds.
+    """
+    date = pd.to_datetime(date)
+    if date.tzinfo is not None:
+        date = date.tz_convert('UTC').tz_localize(None)
+    bucket = f'noaa-{sat}'
+    tag = band_tag(band)
+    candidates = []
+    for hh in (date - pd.Timedelta(hours=1), date, date + pd.Timedelta(hours=1)):
+        year, doy, hour, _ = convert_date(hh)
+        candidates += [k for k in aws_ls(bucket, hour_prefix(frame, year, doy, hour))
+                       if tag in k and f'_{SAT_SHORT[sat]}_' in k]
+    if not candidates:
+        return None
+    diffs = np.array([abs((date - parse_nc_fname(k)).total_seconds())
+                      for k in candidates])
+    ind = int(np.argmin(diffs))
+    if diffs[ind] > max_offset_s:
+        return None
+    return candidates[ind]
+
+
+def aws_get(bucket, key, local_dir='/tmp', replace=False, outfile=None):
     if outfile is None:
-        outfile = f"{local_dir}/{target_file.split('/')[-1]}"
+        outfile = os.path.join(local_dir, os.path.basename(key))
+    os.makedirs(os.path.dirname(outfile) or '.', exist_ok=True)
     if os.path.exists(outfile) and not replace:
         print(f'{outfile} exists and replace = False, skipping download')
-    else:
-        print(f'Downloading to {outfile}...')
-        s3_client.download_file(bucket, target_file, outfile)
+        return outfile
+    print(f'Downloading s3://{bucket}/{key} ...')
+    tmp = outfile + '.part'
+    s3_client().download_file(bucket, key, tmp)
+    os.replace(tmp, outfile)
     return outfile
 
 
 def main(sat, band, frame, date, local_dir='/tmp', dryrun=False, replace=False):
-    '''
-    dryrun: bool
-            If true, will return output filename but not download
-    '''
-    sat_dict = {'goes17': 'G17', 'goes16': 'G16'}
-    short_sat = sat_dict[sat]
-    aws_bucket = f'noaa-{sat}'
-    year, doy, hour, minute = convert_date(date)
-    prefix_hourly = prefix(frame, band, short_sat, year, doy, hour)
-    aws_candidates = aws_ls(aws_bucket, prefix_hourly)
-    obs_dates = [parse_nc_fname(r) for r in aws_candidates]
-    diff_list = [abs((pd.to_datetime(date)-d).total_seconds())
-                 for d in obs_dates]
-    print(
-        f'Found {sat} observation {np.min(diff_list)} seconds away from {date}')
-    ind = np.argmin(diff_list)
-    target_file = aws_candidates[ind]
-    outfile = f"{local_dir}/{target_file.split('/')[-1]}"
+    """Download the scan of `band` nearest `date`; return the local path.
+
+    dryrun: return the would-be local path without downloading.
+    Raises FileNotFoundError if no scan is within 5 minutes of `date`.
+    """
+    key = find_key(sat, band, frame, date)
+    if key is None:
+        raise FileNotFoundError(f'No {sat} C{band:02d} {frame} scan near {date}')
+    print(f'Found {sat} scan {parse_nc_fname(key)} for {date}')
+    outfile = os.path.join(local_dir, os.path.basename(key))
     if not dryrun:
-        outfile = aws_get(aws_bucket, target_file,
-                          local_dir=local_dir, outfile=outfile, replace=replace)
+        outfile = aws_get(f'noaa-{sat}', key, outfile=outfile, replace=replace)
     return outfile
 
 
 if __name__ == "__main__":
-    date = '2020-09-12 17:00'
-    sat = 'goes17'
-    band = 1
-    frame = 'F'
-    local_dir = "/Users/jetolan/goes"
-
-    outfile = main(sat, band, frame, date, local_dir=local_dir)
+    outfile = main('goes18', 1, 'F', '2025-03-20 21:10', local_dir='/tmp/goes')
+    print(outfile)

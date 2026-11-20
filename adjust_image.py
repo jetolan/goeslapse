@@ -7,6 +7,10 @@ import json
 from skimage.exposure import match_histograms
 from skimage.io import imsave
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_LUT = os.path.join(HERE, 'goes17_lut.json')
+DEFAULT_TEMPLATE = os.path.join(HERE, 'GOES17_color_template.png')
+
 class NumpyEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, np.ndarray):
@@ -14,7 +18,7 @@ class NumpyEncoder(json.JSONEncoder):
         return json.JSONEncoder.default(self, obj)
 
 
-def create_lut(in_file, template='GOES17_color_template.png', lut_file='goes17_lut.json'):
+def create_lut(in_file, template=DEFAULT_TEMPLATE, lut_file=DEFAULT_LUT):
     """
     Note: may be better to use 16bit LUT
     """
@@ -54,7 +58,7 @@ def create_lut(in_file, template='GOES17_color_template.png', lut_file='goes17_l
 
     return lut_file
 
-def main(in_file, lut_file='goes17_lut.json', out_file=None, w=5424, h=5424):
+def main(in_file, lut_file=DEFAULT_LUT, out_file=None, w=5424, h=5424):
 
     if out_file is None:
         in_ext = os.path.splitext(in_file)[1]
@@ -64,7 +68,9 @@ def main(in_file, lut_file='goes17_lut.json', out_file=None, w=5424, h=5424):
     im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
 
     dim = (w, h)
-    im = cv2.convertScaleAbs(im, alpha=1.0)
+    # same 16->8 bit scaling create_lut() used when fitting the LUT
+    # (alpha=1.0 clipped nearly every pixel to 255 -> white disk)
+    im = cv2.convertScaleAbs(im, alpha=255 / im.max())
     im = cv2.resize(im, dim, interpolation=cv2.INTER_AREA)
     
     #open pre saved lut json
