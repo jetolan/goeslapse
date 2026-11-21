@@ -18,6 +18,8 @@ os.environ.setdefault('SATPY_CONFIG_PATH', os.path.join(HERE, 'satpy_config'))
 COMPOSITES = {
     'true_color': (1, 2, 3),
     'true_color_with_night_ir_nobg': (1, 2, 3, 13),
+    'true_color_soft': (1, 2, 3),
+    'true_color_soft_wide': (1, 2, 3),
 }
 
 

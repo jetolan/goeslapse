@@ -22,3 +22,25 @@ composites:
     prerequisites:
       - true_color
       - night_ir_gray
+
+  # Soft terminator: satpy's corrected true_color on the lit disk, cross-faded
+  # (linear in cos(sun zenith) between lim_low and lim_high) into the
+  # uncorrected true_color_nocorr, which falls off naturally to a dark night side.
+  # Avoids true_color's hard terminator edge and saturated twilight crescent.
+  true_color_soft:
+    compositor: !!python/name:satpy.composites.fill.DayNightCompositor
+    standard_name: true_color_with_night_ir
+    lim_low: 70
+    lim_high: 90
+    prerequisites:
+      - true_color
+      - true_color_nocorr
+
+  true_color_soft_wide:
+    compositor: !!python/name:satpy.composites.fill.DayNightCompositor
+    standard_name: true_color_with_night_ir
+    lim_low: 50
+    lim_high: 90
+    prerequisites:
+      - true_color
+      - true_color_nocorr

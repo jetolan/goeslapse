@@ -22,7 +22,8 @@ import time
 
 import pandas as pd
 
-METHODS = ('legacy', 'true_color', 'true_color_with_night_ir_nobg')
+METHODS = ('legacy', 'true_color', 'true_color_with_night_ir_nobg',
+           'true_color_soft', 'true_color_soft_wide')
 
 
 def frame_name(sat, date):
@@ -85,7 +86,7 @@ def main():
     ap.add_argument('--start', default='2025-03-20 09:00')
     ap.add_argument('--end', default='2026-03-20 14:50')
     ap.add_argument('--freq', default='10min')
-    ap.add_argument('--method', default='true_color', choices=METHODS)
+    ap.add_argument('--method', default='true_color_soft_wide', choices=METHODS)
     ap.add_argument('--resolution', default='finest', choices=('finest', 'coarsest'),
                     help='satpy grid: finest = 0.5 km (21696 px)')
     ap.add_argument('--size', type=int, default=None,

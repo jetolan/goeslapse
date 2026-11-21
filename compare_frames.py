@@ -27,7 +27,15 @@ DEFAULT_TIMES = [
     '2025-09-22 15:30',  # autumn equinox, terminator across the disk
     '2025-12-21 21:10',  # winter solstice noon
 ]
-METHODS = ['legacy', 'satpy_true_color', 'satpy_night_ir']
+# method name -> satpy composite (None = original rgb_frame pipeline)
+METHODS = {
+    'legacy': None,
+    'satpy_true_color': 'true_color',
+    'satpy_night_ir': 'true_color_with_night_ir_nobg',
+    'satpy_soft': 'true_color_soft',
+    'satpy_soft_wide': 'true_color_soft_wide',
+}
+DEFAULT_METHODS = ['legacy', 'satpy_true_color', 'satpy_soft', 'satpy_soft_wide']
 FULL = 5424
 CROP = 2048            # crop size in 0.5 km pixels
 CROP_CENTER = (0.60, 0.33)  # fraction of disk (x, y): NE Pacific / W North America
@@ -36,7 +44,7 @@ CROP_CENTER = (0.60, 0.33)  # fraction of disk (x, y): NE Pacific / W North Amer
 def _render(method, date, sat, work_dir, out_file):
     """Runs in a fresh process; returns (seconds, peak RSS in GB)."""
     t0 = time.time()
-    if method == 'legacy':
+    if METHODS[method] is None:
         import adjust_image
         import rgb_frame
         bands = rgb_frame.get_bands(date, sat, [1, 2, 3], 'F', work_dir)
@@ -49,8 +57,7 @@ def _render(method, date, sat, work_dir, out_file):
         import dask
         import satpy_frame
         dask.config.set(num_workers=os.cpu_count())
-        comp = 'true_color' if method == 'satpy_true_color' \
-            else 'true_color_with_night_ir_nobg'
+        comp = METHODS[method]
         files = satpy_frame.download(date, sat, 'F', satpy_frame.COMPOSITES[comp],
                                      os.path.join(work_dir, 'nc'))
         satpy_frame.render(files, out_file, comp, resolution='finest')
@@ -93,7 +100,8 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--sat', default='goes18')
     ap.add_argument('--times', nargs='+', default=DEFAULT_TIMES)
-    ap.add_argument('--methods', nargs='+', default=METHODS, choices=METHODS)
+    ap.add_argument('--methods', nargs='+', default=DEFAULT_METHODS,
+                    choices=list(METHODS))
     ap.add_argument('--out', default='compare')
     ap.add_argument('--keep-raw', action='store_true')
     args = ap.parse_args()

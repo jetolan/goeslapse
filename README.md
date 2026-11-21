@@ -52,6 +52,11 @@ Methods:
   weighted synthetic green, 8-bit LUT fitted to a GOES-17 reference image.
 - `satpy_true_color`: satpy `true_color` at full 0.5 km, with pyspectral
   Rayleigh correction and satpy's synthetic green.
+- `satpy_soft` / `satpy_soft_wide`: satpy's corrected `true_color` on the lit
+  disk, cross-faded by sun zenith angle (70→90° / 50→90°) into the uncorrected
+  `true_color_nocorr`, so brightness falls off gradually to a dark night side.
+  This avoids `true_color`'s hard terminator edge and saturated twilight crescent
+  (composites `true_color_soft`, `true_color_soft_wide` in `satpy_config/`).
 - `satpy_night_ir`: as above, with the night side filled with C13 infrared
   cloud tops (`true_color_with_night_ir_nobg`, defined in
   `satpy_config/`; satpy's stock `true_color_with_night_ir` currently fails
