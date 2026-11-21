@@ -82,9 +82,15 @@ logged there and retried on the next run.
 python movie.py ~/data/goes/frames goes18_2025.mp4 --size 4320 --fps 30
 ```
 
-At 30 fps the full year is ~29 minutes. HEVC (libx265, 10-bit) handles square
-frames up to ~5900 px (level 6.x). Keep the frames as the master copy to
+At 30 fps the full year is ~29 minutes. Keep the frames as the master copy to
 re-encode at other sizes, frame rates or crops.
+
+Resolution and playback: libx265, libx264 and libaom will all encode a 10848²
+(1 km) frame, but that exceeds every standard codec level. Hardware decoders
+(QuickTime/VideoToolbox, GPUs, TVs) stop at about 8K, and YouTube at 7680×4320.
+The largest square frame within HEVC's top level is ~5900 px, so 4320² or 5424²
+plays almost everywhere. Larger files need a software player such as mpv or VLC
+(AV1 via dav1d decodes fastest). SVT-AV1 rejects 10848² frames.
 
 ## Storage and compute
 
